@@ -114,6 +114,9 @@ def main():
             ii = 0
             for group_dir in tqdm(os.listdir(test_dir)):
                 img_dir = os.path.join(test_dir, group_dir)
+
+                if not is_test_norm_data and 'TSD' not in img_dir:
+                    continue
                 frames_dict = {}
                 for image_name in os.listdir(img_dir):
                     image_path = os.path.join(img_dir, image_name)
@@ -126,42 +129,43 @@ def main():
                         feed_dict={image_tensor: image_np_expanded})
                     box_coords = to_image_coords(boxes[0], im_height, im_width)
                     
-                    max_pred = 0
-                    targets = []
-                    # TODO 取得分大于指定值的所有box
-                    idx = None
+                    # 获得符合最低置信度的预测结果
+                    pred_idx = []
                     for i, pred in enumerate(scores[0]):
-                        if pred > min_pred and pred > max_pred:
-                            max_pred = pred
-                            idx = i
-                    if idx is not None:
+                        if pred > pred_threshold:
+                            pred_idx.append([i, pred])
+
+                    # 预测结果框添加到image
+                    targets = []
+                    for idx, pred in pred_idx:
                         clazz = int(classes[0][idx:idx+1][0])
                         label = label_list[clazz-1]   
                         box = box_coords[idx:idx+1][0]
-                        targets.append([label, box, max_pred])
+                        targets.append([label, box, pred])
                         for label, box, pred in targets:
                             image = draw_box_and_text(image, box, label, pred, font_size, font)
-                        # 计算score
-                        score.update(image_name, targets)
-
+                    
+                    # 计算score, 保存预测失败的图片
+                    is_pass = score.update(image_name, img_dir, targets)
+                    if not is_pass: # TODO : 真值 box和type写入
+                        cv2.imwrite(os.path.join(fail_case_dir, image_name), image)
+                    
                     # 生成结果图片
                     if is_gen_img:
                         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
                         cv2.imwrite(os.path.join(img_result_dir, image_name), image)
 
+                    # 填充xml数据
                     frame_id = image_name.split('-')[-1].replace('.png', '')
                     frames_dict[frame_id] = targets
-                    # ii += 1
-                    # if ii == 1:
-                    #     # return score
-                    #     break
+
 
                 # 生成xml文件 eg: TSD-Signal-00120-Result.xml
-                frames_dict['frame_number'] = len(os.listdir(img_dir))
-                result_xml_name = group_dir + '-Result.xml'
-                result_xml_path = os.path.join(xml_result_dir, result_xml_name)
-                build_xml(result_xml_path, frames_dict)
-
+                if is_gen_xml:
+                    frames_dict['frame_number'] = len(os.listdir(img_dir))
+                    result_xml_name = group_dir + '-Result.xml'
+                    result_xml_path = os.path.join(xml_result_dir, result_xml_name)
+                    build_xml(result_xml_path, frames_dict)
     return score
 
 data_dir = '../data'
@@ -169,12 +173,15 @@ output_dir = '../output'
 test_dir = os.path.join(data_dir, 'test_samples')
 label_path = os.path.join(data_dir,'traffic.label')
 img_result_dir = os.path.join(output_dir, 'test_result')
+
+fail_case_dir = os.path.join(img_result_dir, 'FailedCase')
 xml_result_dir = os.path.join(output_dir, 'TSD-Signal-Result-Cargo')
 
 GT_xmls_dir = os.path.join(data_dir, 'TSD-Signal-GT') 
-pb_path = './model_pb/resnet50_lowproposal/frozen_inference_graph.pb'
+pb_path = 'model_pb/faster_rcnn_resnet50_lowproposals_coco/frozen_inference_graph.pb'
 
-min_pred = 0
+pred_threshold = 0.5
+
 # all_test_images=glob.glob(os.path.join(test_dir, '*/*.png'))
 # all_test_images.sort()
 
@@ -183,23 +190,30 @@ is_gen_img = True
 # 是否生成提交结果的xml文件 
 is_gen_xml = True
 
+# 是否测试Norm数据集
+is_test_norm_data = False
+
 if __name__ == '__main__':
 
-    if is_gen_img and os.path.exists(img_result_dir):
+    if os.path.exists(img_result_dir):
         shutil.rmtree(img_result_dir)
     os.makedirs(img_result_dir)    
 
-    if is_gen_xml and os.path.exists(xml_result_dir):
+    if os.path.exists(xml_result_dir):
         shutil.rmtree(xml_result_dir)
     os.makedirs(xml_result_dir)  
+    os.makedirs(fail_case_dir)  
+    
 
     score = main()
-    f1 = score.get_f1_score() 
+    f1, precision, recall = score.get_f1_score() 
+
     acc, total = score.get_combine_accuracy()
     box_acc = score.get_box_accuracy()
 
     # print(score.TP, score.FP, score.box_TP, score.box_FP)
-    print("F1 score: ", format(f1,'0.2f'))
+
+    print("F1 score: %.2f, precision: %.2f, recall: %.2f" %(f1, precision, recall))
     print('Total: ', total, ", Accuracy: ", format(acc,'0.1%'))
     print("box_acc: ", format(box_acc,'0.1%'))
     print("box match but type not match count: ", score.type_missed_count)

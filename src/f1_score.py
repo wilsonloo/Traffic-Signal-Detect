@@ -27,11 +27,45 @@ class Score():
 
         return self.xml_file_dict[xml_name], frame
 
-    def update(self, image_name, targets):
+    def _pross_not_TSD_file(self, image_name, img_dir, targets):
+        gt_label = img_dir.split('/')[-1]
+        label_txt = os.path.join(img_dir, 'labels.txt')
+        label_path = os.path.join('../data/TrafficNorm/', gt_label, 'labels.txt')
+        self.ALL += 1
+        for label, box, pred in targets:
+            x, y =  0.5*(box[0] + box[2]),  0.5*(box[1] + box[3])
+            with open(label_path) as f:
+                lines = f.readlines()
+                for i in range(len(lines)):
+                    if image_name in lines[i]:
+                        line = lines[i].split()
+                        img_name, x1, y1, w, h = line
+                        x1, y1, w, h = int(x1), int(y1), int(w), int(h)
+                        if x1 <= x <= x2 and y1 <= y <= y2:
+                            self.box_TP += 1
+                            if label == gt_label:
+                                self.TP += 1
+                            else:
+                                self.FP += 1
+                        else:
+                            self.FP += 1
+                    # 所有标注只有一个,如果匹配了直接return
+                    return
+                self.FP += 1
+
+        
+
+    def update(self, image_name, img_dir, targets):
+        # 新增数据集单独处理
+        if 'TSD' not in image_name:
+            self._pross_not_TSD_file(image_name, img_dir, targets)
+            return
+
         xml, frame = self._get_xml_object(image_name)
         frame_name = 'Frame' + frame
         targets_num = int(xml.xpath(frame_name + 'TargetNumber')[0].text)
         self.ALL += targets_num
+        last_FP = self.FP
         gt_boxes = []
         for i in range(targets_num):
             number = ('00000'+str(i))[-5:]
@@ -58,23 +92,25 @@ class Score():
 
             if box_correct:
                 box_gt_label = box_gt_label.strip('\"')
+                self.box_TP += 1
                 if label == box_gt_label:
                     self.TP += 1
-                    self.box_TP += 1
                 else:
-                    self.box_FP += 1
+                    self.FP += 1
                     print('pos match but type not match:',label, box_gt_label, image_name)
                     self.type_missed_count += 1
-                
             else:
                 # 长边尺寸小于 16 像素的交通标志、长边尺寸小于 9 像素的交通信号灯不作检测要求
                 # 如果物体较小，GT里就没有。 就不算误检。
                 # if (type == 'sign' and (width < 16 or height < 16)) or (type == 'light' and (width < 9 or height < 9)):
                     # continue
+                self.box_FP += 1
                 self.FP += 1
 
         self.FN += len(gt_boxes)
         # TODO 处理每个label的准确率
+        return last_FP == self.FP
+
 
 
     def get_box_accuracy(self):
@@ -91,7 +127,8 @@ class Score():
         recall = TP / (TP + FN)
         f1_score = 2 *  precision * recall / (precision + recall)
 
-        return f1_score
+
+        return f1_score, precision, recall
 
 
 if __name__ == '__main__':
