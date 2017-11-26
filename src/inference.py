@@ -138,7 +138,8 @@ def main():
     cf = configparser.ConfigParser()
     cf.read('../config/traffic.config')    
     font_size = 20
-    font = ImageFont.truetype(cf.get('font_path', 'simsun'), font_size)
+    font = ImageFont.truetype(cf.get('font_path', 'simsun'), font_size) 
+    #font = ImageFont.truetype('FreeSerif.ttf', font_size)
 
     _, label_list = get_label_dict(label_path)
     detection_graph = load_graph()
@@ -193,15 +194,15 @@ def main():
                         image = draw_box_and_text(image, box, label, pred, font_size, font)
                     
                     # 计算score
-                    is_pass = score.update(image_name, img_dir, targets)
+                    # is_pass = score.update(image_name, img_dir, targets)
                     
                     # 生成结果图片 正确的和错误的分开保存
-                    if is_gen_img:
-                        if not is_pass: # TODO : 真值 box和type写入
-                            cv2.imwrite(os.path.join(fail_case_dir, image_name), image)                        
-                        else:
-                            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-                            cv2.imwrite(os.path.join(img_result_dir, image_name), image)
+                    #if is_gen_img:
+                    #    if not is_pass: # TODO : 真值 box和type写入
+                    #        cv2.imwrite(os.path.join(fail_case_dir, image_name), image)                        
+                    #    else:
+                    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+                    cv2.imwrite(os.path.join(img_result_dir, image_name), image)
 
                     # 填充xml数据
                     frame_id = image_name.split('-')[-1].replace('.png', '')
@@ -226,9 +227,10 @@ fail_case_dir = os.path.join(img_result_dir, 'FailedCase')
 xml_result_dir = os.path.join(output_dir, 'TSD-Signal-Result-Cargo')
 
 GT_xmls_dir = os.path.join(data_dir, 'TSD-Signal-GT') 
-pb_path = './model_bak/model_pb/rcnn_resnet101_27941/frozen_inference_graph.pb'
+#pb_path = './model_pb/ip2_0.963_model/frozen_inference_graph.pb'
+pb_path = './model_pb/rcnn_resnet50/frozen_inference_graph.pb'
 
-pred_threshold = 0.5
+pred_threshold = 0.3
 
 # all_test_images=glob.glob(os.path.join(test_dir, '*/*.png'))
 # all_test_images.sort()
@@ -252,19 +254,20 @@ if __name__ == '__main__':
     os.makedirs(xml_result_dir)  
     os.makedirs(fail_case_dir)  
     
-
+   
     score = main()
+    '''
     f1, precision, recall = score.get_f1_score() 
 
     acc, total = score.get_combine_accuracy()
     box_acc = score.get_box_accuracy()
 
-    # print(score.TP, score.FP, score.box_TP, score.box_FP)
+    print(score.TP, score.FP, score.box_TP, score.box_FP)
 
-    print("F1 score: %.2f, precision: %.2f, recall: %.2f" %(f1, precision, recall))
+    #print("F1 score: %.2f, precision: %.2f, recall: %.2f" %(f1, precision, recall))
     print('Total: ', total, ", Accuracy: ", format(acc,'0.1%'))
     print("box_acc: ", format(box_acc,'0.1%'))
     print("box match but type not match count: ", score.type_missed_count)
 
-
+    '''
 
